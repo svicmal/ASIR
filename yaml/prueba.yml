@@ -1,0 +1,32 @@
+---
+# Este playbook es de prueba nginx 
+- hosts: 100.100.100.4
+  remote_user: kali
+  become: yes
+  become_method: sudo
+  vars_files:
+    - pass.yml
+  tasks:
+    - name: Instalar vsftpd
+      apt:
+        name: vsftpd
+        state: present
+
+    - name: Copiar archivo de configuración de vsftpd
+      copy:
+        src: /etc/vsftpd.conf
+        dest: /etc/vsftpd.conf
+      notify: Reiniciar ftp
+
+    - name: Copiar la clave ftp para el certificado
+      copy:
+        src: /etc/ssl/private/ftps_vsftpd.pem
+        dest: /etc/ssl/private/ftps_vsftpd.pem
+      notify: Reiniciar ftp
+
+  handlers:
+    - name: Reiniciar ftp
+      service:
+        name: vsftpd
+        state: restarted
+
