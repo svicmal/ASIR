@@ -1,0 +1,42 @@
+---
+- name: Copiar configuración a los hosts
+  become: yes  
+  
+  tasks:
+  - name: instalar programa nginx
+  # vamos a instalar nginx y los programas de ansible ya que la intención es que este servidor sea quien configure a los demás
+    become: yes
+    yum:
+      name: nginx
+    notify:
+      - Copiar configuracion
+      - reiniciar el servidor
+  - name: instalar programa ansible
+    become: yes
+    yum:
+      name: ansible
+  - name: copiar clave privada
+    copy:
+      src: /home/kali/CrearTresCapas.txt
+      dest: /etc/nginx/sites-enabled/default
+  - name: inventario
+    copy:
+      src: /home/kali/ip_privada.txt
+      dest: /home/ec2-user/inventario.ini
+  
+  handlers:
+  - name: copiar configuracion
+    copy:
+      src: /home/kali/CrearTresCapas.txt
+      dest: /etc/nginx/sites-enabled/default
+  - name: reiniciar el servidor
+    become: yes 
+    systemd:
+      name: nginx
+      state: started
+      enabled: yes
+
+  post_tasks:
+    - name: Ejecutar comando al finalizar
+      command: ansible-playbook -i inventario.ini install_apps.yml
+      become: yes

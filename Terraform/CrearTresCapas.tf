@@ -108,8 +108,17 @@ resource "aws_route_table_association" "subnet_priv_association" {
 
 
 # Instancias 
+# Servidor HTML función proxy
 
+resource "aws_launch_configuration" "nginx" {
+  name_prefix     = "learn-terraform-aws-asg-"
+  image_id        = data.aws_ami.amazon-linux.id
+  instance_type   = "t2.micro"
+  security_groups = [aws_security_group.gs-nginx.id]
 
+  lifecycle {
+    create_before_destroy = true
+  }
 
 # Servidores de aplicaciones
 # El userdata lo tendría que hacer con ansible o luego le hago un trigger y lo mando ???
@@ -117,28 +126,44 @@ resource "aws_launch_configuration" "terramino" {
   name_prefix     = "learn-terraform-aws-asg-"
   image_id        = data.aws_ami.amazon-linux.id
   instance_type   = "t2.micro"
-  user_data       = file("user-data.sh")
   security_groups = [aws_security_group.gs-php.id]
 
   lifecycle {
     create_before_destroy = true
   }
+  provisioner "local-exec" {
+    command = "echo '${aws_instance.terramino.private_ip}' > ip_privada.txt"
+  }
 }
+
+# Configuración de los dos
+}
+resource "null_resource" "run_ansible" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      ansible-playbook -i "${aws_instance.nginx.public_ip}," -u ec2-user --private-key=path/to/your/private/key playbook.yml
+    EOT
+  }
+
+  depends_on = [aws_instance.nginx]
+}
+
+
+
 # Grupo de autoescalado
 resource "aws_autoscaling_group" "terramino" {
   min_size             = 1
   max_size             = 3
   desired_capacity     = 1
   launch_configuration = aws_launch_configuration.terramino.name
-  vpc_zone_identifier  = module.servicios.public_subnets
-}
+  vpc_zone_identifier  = aws_vpc.servicios.id
 # Balanceador de carga 
 resource "aws_lb" "terramino" {
   name               = "learn-asg-terramino-lb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.gs-php.id]
-  subnets            = module.subnet_priv.public_subnets
+  subnets            = aws_subnet.subnet_priv.id
 }
 # De aquí hasta los grupos de seguridad no tengo ni idea
 resource "aws_lb_listener" "terramino" {
@@ -151,11 +176,11 @@ resource "aws_lb_listener" "terramino" {
     target_group_arn = aws_lb_target_group.terramino.arn
   }
 }
- resource "aws_lb_target_group" "terramino" {
+resource "aws_lb_target_group" "terramino" {
    name     = "learn-asg-terramino"
    port     = 9000
    protocol = "TCP"
-   vpc_id   = module.servicios.vpc_id
+   vpc_id   = aws_vpc.servicios.id
  }
 
 resource "aws_autoscaling_attachment" "terramino" {
@@ -229,4 +254,14 @@ resource "aws_security_group" "gs-php" {
     protocol  = "-1"  # Permitir todo el tráfico saliente
     cidr_blocks = ["0.0.0.0/0"]
   }
-}  
+}
+
+
+# EFS
+resource "aws_efs_file_system" "almacen" {
+  creation_token = "almacen"
+
+  tags = {
+    Name = "almacen"
+  }
+}
